@@ -44,16 +44,21 @@ export default function DrawingApp() {
 
   // Predefined colors
   const predefinedColors = [
-    "#000000",
-    "#FFFFFF",
-    "#FF0000",
-    "#00FF00",
-    "#0000FF",
-    "#FFFF00",
-    "#FF00FF",
-    "#00FFFF",
-    "#FFA500",
-    "#800080",
+    "#000000", // Black
+    "#FFFFFF", // White
+    "#FF0000", // Red
+    "#00FF00", // Green
+    "#0000FF", // Blue
+    "#FFFF00", // Yellow
+    "#FF00FF", // Magenta
+    "#00FFFF", // Cyan
+    "#FFA500", // Orange
+    "#800080", // Purple
+    "#A52A2A", // Brown
+    "#808080", // Gray
+    "#FFD700", // Gold
+    "#4B0082", // Indigo
+    "#FF69B4", // Pink
   ]
 
 
@@ -392,32 +397,38 @@ export default function DrawingApp() {
 
   // Add touch event handling
   const handleTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault() // Prevent scrolling while drawing
-    const touch = e.touches[0]
+    // Don't prevent default if we're clicking on a color picker or its children
+    const target = e.target as HTMLElement;
+    if (target.closest('.color-picker') || target.closest('input[type="color"]')) {
+      return;
+    }
+    
+    e.preventDefault(); // Prevent scrolling while drawing
+    const touch = e.touches[0];
     const point = {
       x: touch.clientX - (canvasRef.current?.getBoundingClientRect().left || 0),
       y: touch.clientY - (canvasRef.current?.getBoundingClientRect().top || 0)
-    }
-    setIsDrawing(true)
-    setStartPoint(point)
+    };
+    setIsDrawing(true);
+    setStartPoint(point);
 
     if (drawingMode === "pen" || drawingMode === "eraser") {
-      const ctx = canvasRef.current?.getContext("2d")
+      const ctx = canvasRef.current?.getContext("2d");
       if (ctx) {
-        ctx.beginPath()
-        ctx.moveTo(point.x, point.y)
-        ctx.lineCap = "round"
-        ctx.lineJoin = "round"
-        ctx.strokeStyle = drawingMode === "eraser" ? "#FFFFFF" : color
-        ctx.lineWidth = brushSize
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = drawingMode === "eraser" ? "#FFFFFF" : color;
+        ctx.lineWidth = brushSize;
       }
     } else if (drawingMode === "rectangle" || drawingMode === "circle" || drawingMode === "line") {
-      const ctx = canvasRef.current?.getContext("2d")
+      const ctx = canvasRef.current?.getContext("2d");
       if (ctx && canvasRef.current) {
-        setShapePreviewImage(ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height))
+        setShapePreviewImage(ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height));
       }
     }
-  }
+  };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     e.preventDefault() // Prevent scrolling while drawing
@@ -501,6 +512,21 @@ export default function DrawingApp() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Add click outside handler for color picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.color-picker') && !target.closest('input[type="color"]')) {
+        setShowColorPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
 
   // Render the landing page
@@ -973,7 +999,13 @@ export default function DrawingApp() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 21h18"
                   />
                 </svg>
               </motion.button>
@@ -1094,6 +1126,75 @@ export default function DrawingApp() {
                 )}
               </AnimatePresence>
 
+              {/* Color Picker */}
+              <div className="border-t border-gray-200 my-2 md:my-4 w-full md:w-8"></div>
+
+              <div className="relative flex-shrink-0">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200"
+                  style={{ backgroundColor: color }}
+                >
+                  <span className="sr-only">Select Color</span>
+                </motion.button>
+
+                <AnimatePresence>
+                  {showColorPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="fixed md:absolute left-0 md:left-16 top-0 md:top-0 bg-white shadow-lg rounded-lg p-4 z-50 w-full md:w-48 max-w-sm mx-auto md:mx-0"
+                      style={{
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        maxHeight: '90vh',
+                        overflowY: 'auto'
+                      }}
+                    >
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-semibold">Colors</h3>
+                        <button
+                          onClick={() => setShowColorPicker(false)}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-5 gap-3 mb-4">
+                        {predefinedColors.map((c, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setColor(c)
+                              setShowColorPicker(false)
+                            }}
+                            className="w-8 h-8 rounded-full border border-gray-300 hover:scale-110 transition-transform"
+                            style={{ backgroundColor: c }}
+                          >
+                            <span className="sr-only">Color {c}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-4">
+                        <label className="text-sm text-gray-600 block mb-2">Custom Color</label>
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          className="w-full h-10 cursor-pointer rounded-lg"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               {/* History Controls */}
               <div className="border-t border-gray-200 my-2 md:my-4 w-full md:w-8"></div>
 
@@ -1136,58 +1237,6 @@ export default function DrawingApp() {
                   />
                 </svg>
               </motion.button>
-
-              {/* Color Picker */}
-              <div className="border-t border-gray-200 my-2 md:my-4 w-full md:w-8"></div>
-
-              <div className="relative flex-shrink-0">
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setShowColorPicker(!showColorPicker)}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: color }}
-                >
-                  <span className="sr-only">Select Color</span>
-                </motion.button>
-
-                <AnimatePresence>
-                  {showColorPicker && (
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="absolute left-16 top-0 bg-white shadow-lg rounded-lg p-4 z-10"
-                    >
-                      <h3 className="text-sm font-semibold mb-2">Colors</h3>
-                      <div className="grid grid-cols-5 gap-2">
-                        {predefinedColors.map((c, index) => (
-                          <button
-                            key={index}
-                            onClick={() => {
-                              setColor(c)
-                              setShowColorPicker(false)
-                            }}
-                            className="w-6 h-6 rounded-full border border-gray-300"
-                            style={{ backgroundColor: c }}
-                          >
-                            <span className="sr-only">Color {c}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="mt-3">
-                        <label className="text-xs text-gray-500 block mb-1">Custom Color</label>
-                        <input
-                          type="color"
-                          value={color}
-                          onChange={(e) => setColor(e.target.value)}
-                          className="w-full h-8"
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
             </div>
           </div>
 
