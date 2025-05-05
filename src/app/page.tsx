@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import saveAs from "file-saver"
+import Head from "next/head"
 
 
 // Define types
@@ -387,6 +388,119 @@ export default function DrawingApp() {
       saveToHistory()
     }
   }
+
+
+  // Add touch event handling
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault() // Prevent scrolling while drawing
+    const touch = e.touches[0]
+    const point = {
+      x: touch.clientX - (canvasRef.current?.getBoundingClientRect().left || 0),
+      y: touch.clientY - (canvasRef.current?.getBoundingClientRect().top || 0)
+    }
+    setIsDrawing(true)
+    setStartPoint(point)
+
+    if (drawingMode === "pen" || drawingMode === "eraser") {
+      const ctx = canvasRef.current?.getContext("2d")
+      if (ctx) {
+        ctx.beginPath()
+        ctx.moveTo(point.x, point.y)
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        ctx.strokeStyle = drawingMode === "eraser" ? "#FFFFFF" : color
+        ctx.lineWidth = brushSize
+      }
+    } else if (drawingMode === "rectangle" || drawingMode === "circle" || drawingMode === "line") {
+      const ctx = canvasRef.current?.getContext("2d")
+      if (ctx && canvasRef.current) {
+        setShapePreviewImage(ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height))
+      }
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault() // Prevent scrolling while drawing
+    if (!isDrawing) return
+
+    const touch = e.touches[0]
+    const point = {
+      x: touch.clientX - (canvasRef.current?.getBoundingClientRect().left || 0),
+      y: touch.clientY - (canvasRef.current?.getBoundingClientRect().top || 0)
+    }
+    const ctx = canvasRef.current?.getContext("2d")
+
+    if (ctx && canvasRef.current) {
+      switch (drawingMode) {
+        case "pen":
+        case "eraser":
+          ctx.lineTo(point.x, point.y)
+          ctx.stroke()
+          break
+
+        case "rectangle":
+        case "circle":
+        case "line":
+          if (startPoint && shapePreviewImage) {
+            ctx.putImageData(shapePreviewImage, 0, 0)
+            ctx.beginPath()
+            ctx.strokeStyle = color
+            ctx.lineWidth = brushSize
+            if (drawingMode === "rectangle") {
+              ctx.rect(startPoint.x, startPoint.y, point.x - startPoint.x, point.y - startPoint.y)
+              ctx.stroke()
+            } else if (drawingMode === "circle") {
+              const radius = Math.sqrt(Math.pow(point.x - startPoint.x, 2) + Math.pow(point.y - startPoint.y, 2))
+              ctx.arc(startPoint.x, startPoint.y, radius, 0, 2 * Math.PI)
+              ctx.stroke()
+            } else if (drawingMode === "line") {
+              ctx.moveTo(startPoint.x, startPoint.y)
+              ctx.lineTo(point.x, point.y)
+              ctx.stroke()
+            }
+          }
+          break
+      }
+    }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault() // Prevent scrolling while drawing
+    if (isDrawing) {
+      setIsDrawing(false)
+      setShapePreviewImage(null)
+      saveToHistory()
+    }
+  }
+
+  // Add resize handler for mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (canvasRef.current) {
+        const canvas = canvasRef.current
+        const container = canvas.parentElement
+        if (container) {
+          const currentImageData = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height)
+          
+          // Set canvas size to match container
+          canvas.width = container.clientWidth
+          canvas.height = container.clientHeight
+          
+          // Restore the image data after resize
+          if (currentImageData) {
+            canvas.getContext("2d")?.putImageData(currentImageData, 0, 0)
+          }
+        }
+      }
+    }
+
+    // Initial resize
+    handleResize()
+
+    // Add resize listener
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
 
   // Render the landing page
@@ -783,422 +897,407 @@ export default function DrawingApp() {
 
   // Render the drawing interface
   const renderDrawingInterface = () => (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Top Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2 flex justify-between items-center">
-        <div className="flex items-center">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowLanding(true)}
-            className="mr-4 text-gray-600 hover:text-indigo-600"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </motion.button>
-          <h1 className="text-xl font-bold text-gray-800">Canvas Studio</h1>
-        </div>
-
-
-        <div className="flex items-center space-x-4">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={saveAsImage}
-            className="flex items-center px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-          >
-            <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-              />
-            </svg>
-            Save as Image
-          </motion.button>
-        </div>
-      </div>
-
-
-      {/* Main Content */}
-      <div className="flex-grow flex">
-        {/* Left Sidebar - Tools */}
-        <div className="w-16 bg-white border-r border-gray-200 flex flex-col items-center py-4">
-          {/* Drawing Tools */}
-          <div className="space-y-4">
+    <>
+      <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </Head>
+      <div className="h-screen flex flex-col bg-gray-100">
+        {/* Top Toolbar */}
+        <div className="bg-white border-b border-gray-200 px-4 py-2 flex justify-between items-center">
+          <div className="flex items-center">
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setDrawingMode("pen")}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${drawingMode === "pen" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                />
-              </svg>
-            </motion.button>
-
-
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setDrawingMode("eraser")}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${drawingMode === "eraser" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </motion.button>
-
-
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setShowShapesPanel(!showShapesPanel)}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${drawingMode === "rectangle" || drawingMode === "circle" || drawingMode === "line" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-                />
-              </svg>
-            </motion.button>
-
-
-            {/* Shapes Panel */}
-            <AnimatePresence>
-              {showShapesPanel && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="absolute left-16 top-32 bg-white shadow-lg rounded-lg p-2 z-10"
-                >
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => {
-                        setDrawingMode("rectangle")
-                        setShowShapesPanel(false)
-                      }}
-                      className={`w-full p-2 rounded flex items-center ${drawingMode === "rectangle" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
-                    >
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2" />
-                      </svg>
-                      Rectangle
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDrawingMode("circle")
-                        setShowShapesPanel(false)
-                      }}
-                      className={`w-full p-2 rounded flex items-center ${drawingMode === "circle" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
-                    >
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="9" strokeWidth="2" />
-                      </svg>
-                      Circle
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDrawingMode("line")
-                        setShowShapesPanel(false)
-                      }}
-                      className={`w-full p-2 rounded flex items-center ${drawingMode === "line" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
-                    >
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5v14" />
-                      </svg>
-                      Line
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setShowBrushPanel(!showBrushPanel)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-100"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-                />
-              </svg>
-            </motion.button>
-
-
-            {/* Brush Size Panel */}
-            <AnimatePresence>
-              {showBrushPanel && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="absolute left-16 top-48 bg-white shadow-lg rounded-lg p-4 z-10"
-                >
-                  <h3 className="text-sm font-semibold mb-2">Brush Size: {brushSize}px</h3>
-                  <input
-                    type="range"
-                    min="1"
-                    max="50"
-                    value={brushSize}
-                    onChange={(e) => setBrushSize(Number.parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between mt-2">
-                    <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
-                      <div className="bg-black rounded-full" style={{ width: "2px", height: "2px" }}></div>
-                    </div>
-                    <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
-                      <div className="bg-black rounded-full" style={{ width: "10px", height: "10px" }}></div>
-                    </div>
-                    <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
-                      <div className="bg-black rounded-full" style={{ width: "20px", height: "20px" }}></div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-
-          <div className="border-t border-gray-200 my-4 w-8"></div>
-
-
-          {/* Color Picker */}
-          <div className="relative">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setShowColorPicker(!showColorPicker)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: color }}
-            >
-              <span className="sr-only">Select Color</span>
-            </motion.button>
-
-
-            <AnimatePresence>
-              {showColorPicker && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="absolute left-16 top-0 bg-white shadow-lg rounded-lg p-4 z-10"
-                >
-                  <h3 className="text-sm font-semibold mb-2">Colors</h3>
-                  <div className="grid grid-cols-5 gap-2">
-                    {predefinedColors.map((c, index) => (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          setColor(c)
-                          setShowColorPicker(false)
-                        }}
-                        className="w-6 h-6 rounded-full border border-gray-300"
-                        style={{ backgroundColor: c }}
-                      >
-                        <span className="sr-only">Color {c}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-3">
-                    <label className="text-xs text-gray-500 block mb-1">Custom Color</label>
-                    <input
-                      type="color"
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className="w-full h-8"
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-
-          <div className="border-t border-gray-200 my-4 w-8"></div>
-
-
-          {/* History Controls */}
-          <div className="space-y-4">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={handleUndo}
-              disabled={historyIndex <= 0}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${historyIndex <= 0 ? "text-gray-300" : "text-gray-600 hover:bg-gray-100"}`}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowLanding(true)}
+              className="mr-4 text-gray-600 hover:text-indigo-600"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </motion.button>
+            <h1 className="text-xl font-bold text-gray-800">Canvas Studio</h1>
+          </div>
 
-
+          <div className="flex items-center space-x-4">
             <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={handleRedo}
-              disabled={historyIndex >= history.length - 1}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${historyIndex >= history.length - 1 ? "text-gray-300" : "text-gray-600 hover:bg-gray-100"}`}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={saveAsImage}
+              className="flex items-center px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </motion.button>
-
-
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={handleClearCanvas}
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-100"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                 />
               </svg>
+              <span className="hidden sm:inline">Save</span>
             </motion.button>
           </div>
         </div>
 
-
-        {/* Main Canvas Area */}
-        <div className="flex-grow relative bg-gray-50 overflow-hidden">
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 cursor-crosshair"
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-          />
-        </div>
-
-
-        {/* Right Sidebar - Layers */}
-        <div className="w-64 bg-white border-l border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
-              <h2 className="font-semibold text-gray-800">Layers</h2>
+        {/* Main Content */}
+        <div className="flex-grow flex flex-col md:flex-row">
+          {/* Left Sidebar - Tools */}
+          <div className="w-full md:w-16 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex md:flex-col items-center py-2 md:py-4">
+            <div className="flex md:flex-col space-x-4 md:space-x-0 md:space-y-4 overflow-x-auto md:overflow-x-visible px-2 md:px-0">
+              {/* Drawing Tools */}
               <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={addLayer}
-                className="text-indigo-600 hover:text-indigo-800"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setDrawingMode("pen")}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${drawingMode === "pen" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
                 </svg>
               </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setDrawingMode("eraser")}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${drawingMode === "eraser" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setShowShapesPanel(!showShapesPanel)}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${drawingMode === "rectangle" || drawingMode === "circle" || drawingMode === "line" ? "bg-indigo-100 text-indigo-600" : "text-gray-600 hover:bg-gray-100"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+                  />
+                </svg>
+              </motion.button>
+
+              {/* Shapes Panel */}
+              <AnimatePresence>
+                {showShapesPanel && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="absolute left-16 top-32 bg-white shadow-lg rounded-lg p-2 z-10"
+                  >
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => {
+                          setDrawingMode("rectangle")
+                          setShowShapesPanel(false)
+                        }}
+                        className={`w-full p-2 rounded flex items-center ${drawingMode === "rectangle" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
+                      >
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2" />
+                        </svg>
+                        Rectangle
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDrawingMode("circle")
+                          setShowShapesPanel(false)
+                        }}
+                        className={`w-full p-2 rounded flex items-center ${drawingMode === "circle" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
+                      >
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="9" strokeWidth="2" />
+                        </svg>
+                        Circle
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDrawingMode("line")
+                          setShowShapesPanel(false)
+                        }}
+                        className={`w-full p-2 rounded flex items-center ${drawingMode === "line" ? "bg-indigo-100 text-indigo-600" : "hover:bg-gray-100"}`}
+                      >
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5v14" />
+                        </svg>
+                        Line
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setShowBrushPanel(!showBrushPanel)}
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-gray-600 hover:bg-gray-100"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                  />
+                </svg>
+              </motion.button>
+
+              {/* Brush Size Panel */}
+              <AnimatePresence>
+                {showBrushPanel && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="absolute left-16 top-48 bg-white shadow-lg rounded-lg p-4 z-10"
+                  >
+                    <h3 className="text-sm font-semibold mb-2">Brush Size: {brushSize}px</h3>
+                    <input
+                      type="range"
+                      min="1"
+                      max="50"
+                      value={brushSize}
+                      onChange={(e) => setBrushSize(Number.parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between mt-2">
+                      <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
+                        <div className="bg-black rounded-full" style={{ width: "2px", height: "2px" }}></div>
+                      </div>
+                      <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
+                        <div className="bg-black rounded-full" style={{ width: "10px", height: "10px" }}></div>
+                      </div>
+                      <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center">
+                        <div className="bg-black rounded-full" style={{ width: "20px", height: "20px" }}></div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* History Controls */}
+              <div className="border-t border-gray-200 my-2 md:my-4 w-full md:w-8"></div>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={handleUndo}
+                disabled={historyIndex <= 0}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${historyIndex <= 0 ? "text-gray-300" : "text-gray-600 hover:bg-gray-100"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={handleRedo}
+                disabled={historyIndex >= history.length - 1}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${historyIndex >= history.length - 1 ? "text-gray-300" : "text-gray-600 hover:bg-gray-100"}`}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={handleClearCanvas}
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-gray-600 hover:bg-gray-100"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </motion.button>
+
+              {/* Color Picker */}
+              <div className="border-t border-gray-200 my-2 md:my-4 w-full md:w-8"></div>
+
+              <div className="relative flex-shrink-0">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: color }}
+                >
+                  <span className="sr-only">Select Color</span>
+                </motion.button>
+
+                <AnimatePresence>
+                  {showColorPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="absolute left-16 top-0 bg-white shadow-lg rounded-lg p-4 z-10"
+                    >
+                      <h3 className="text-sm font-semibold mb-2">Colors</h3>
+                      <div className="grid grid-cols-5 gap-2">
+                        {predefinedColors.map((c, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setColor(c)
+                              setShowColorPicker(false)
+                            }}
+                            className="w-6 h-6 rounded-full border border-gray-300"
+                            style={{ backgroundColor: c }}
+                          >
+                            <span className="sr-only">Color {c}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3">
+                        <label className="text-xs text-gray-500 block mb-1">Custom Color</label>
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          className="w-full h-8"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
 
-
-          <div className="flex-grow overflow-y-auto p-2">
-            {layers.map((layer, index) => (
-              <motion.div
-                key={layer.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className={`p-2 mb-2 rounded-md border ${activeLayerIndex === index ? "border-indigo-300 bg-indigo-50" : "border-gray-200"}`}
-              >
-                <div className="flex items-center">
-                  <button
-                    onClick={() => toggleLayerVisibility(index)}
-                    className="mr-2 text-gray-500 hover:text-gray-700"
-                  >
-                    {layer.visible ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                        />
-                      </svg>
-                    )}
-                  </button>
-
-
-                  <div className="flex-grow cursor-pointer" onClick={() => setActiveLayerIndex(index)}>
-                    <p className={`text-sm ${activeLayerIndex === index ? "font-medium" : ""}`}>{layer.name}</p>
-                  </div>
-
-
-                  {layers.length > 1 && (
-                    <button onClick={() => deleteLayer(index)} className="ml-2 text-gray-500 hover:text-red-500">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            ))}
+          {/* Main Canvas Area */}
+          <div className="flex-grow relative bg-gray-50 overflow-hidden">
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 cursor-crosshair touch-none select-none"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            />
           </div>
 
+          {/* Right Sidebar - Layers */}
+          <div className="w-full md:w-64 bg-white border-t md:border-t-0 md:border-l border-gray-200 flex flex-col">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="font-semibold text-gray-800">Layers</h2>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={addLayer}
+                  className="text-indigo-600 hover:text-indigo-800"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </motion.button>
+              </div>
+            </div>
 
-          <div className="p-4 border-t border-gray-200">
-            <div className="text-xs text-gray-500 mb-2">Current Tool</div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: color }}></div>
-              <span className="text-sm capitalize">{drawingMode}</span>
-              <span className="ml-2 text-xs text-gray-500">{brushSize}px</span>
+            <div className="flex-grow overflow-y-auto p-2">
+              {layers.map((layer, index) => (
+                <motion.div
+                  key={layer.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className={`p-2 mb-2 rounded-md border ${activeLayerIndex === index ? "border-indigo-300 bg-indigo-50" : "border-gray-200"}`}
+                >
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => toggleLayerVisibility(index)}
+                      className="mr-2 text-gray-500 hover:text-gray-700"
+                    >
+                      {layer.visible ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                          />
+                        </svg>
+                      )}
+                    </button>
+
+                    <div className="flex-grow cursor-pointer" onClick={() => setActiveLayerIndex(index)}>
+                      <p className={`text-sm ${activeLayerIndex === index ? "font-medium" : ""}`}>{layer.name}</p>
+                    </div>
+
+                    {layers.length > 1 && (
+                      <button onClick={() => deleteLayer(index)} className="ml-2 text-gray-500 hover:text-red-500">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="p-4 border-t border-gray-200">
+              <div className="text-xs text-gray-500 mb-2">Current Tool</div>
+              <div className="flex items-center">
+                <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: color }}></div>
+                <span className="text-sm capitalize">{drawingMode}</span>
+                <span className="ml-2 text-xs text-gray-500">{brushSize}px</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   )
 
 
